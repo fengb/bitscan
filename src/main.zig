@@ -37,6 +37,55 @@ pub const Naive = struct {
     }
 };
 
+pub const Swar64 = struct {
+    block_data: []u64,
+
+    const block_bits = 64;
+
+    pub fn init(data: []align(16) u8) Swar64 {
+        return .{ .block_data = @bytesToSlice(u64, data) };
+    }
+
+    // Adapted from https://lifecs.likai.org/2010/06/finding-n-consecutive-bits-of-ones-in.html
+    fn matches(num: u64, count: usize) u64 {
+        const stop = std.math.floorPowerOfTwo(u64, count);
+        var result = num;
+
+        var i: usize = 1;
+        while (i < stop) : (i <<= 1) {
+            result &= result >> @intCast(u6, i);
+        }
+
+        if (stop < count) {
+            result &= (result >> @intCast(u6, count - stop));
+        }
+
+        return result;
+    }
+
+    pub fn scan(self: Swar64, contiguous: usize) ?usize {
+        // TODO: search memory spanning blocks
+        if (contiguous < block_bits) {
+            for (self.block_data) |data, i| {
+                const match = matches(data, contiguous);
+                if (match > 0) {
+                    // Little Endian because it's "native" to wasm.
+                    const lsb = @ctz(u64, match);
+                    return i * block_bits + lsb;
+                }
+            }
+        }
+        return null;
+    }
+
+    pub fn mark(self: *Swar64, start: usize, len: usize) void {
+        const i = start / block_bits;
+        const lsb = start % block_bits;
+        const mask = (@as(u64, 1) << @intCast(u6, len)) - 1;
+        self.block_data[i] |= mask << @intCast(u6, lsb);
+    }
+};
+
 pub const Swar128 = struct {
     block_data: []u128,
 
@@ -107,6 +156,10 @@ fn testSmoke(comptime T: type) void {
 
 test "Naive" {
     testSmoke(Naive);
+}
+
+test "Swar64" {
+    testSmoke(Swar64);
 }
 
 test "Swar128" {
