@@ -37,6 +37,54 @@ pub const Naive = struct {
     }
 };
 
+pub const Skip = struct {
+    packed_data: std.PackedIntSlice(u1),
+    block_data: []u128,
+
+    pub fn init(data: []u8) Skip {
+        return .{
+            .packed_data = std.PackedIntSlice(u1).init(data, data.len * 8),
+            .block_data = @bytesToSlice(u128, data),
+        };
+    }
+
+    pub fn scan(self: Skip, contiguous: usize) ?usize {
+        var found_idx: usize = 0;
+        var found_size: usize = 0;
+
+        for (self.block_data) |segment, i| {
+            if (segment == 0) continue;
+
+            var j: usize = i * 128;
+            while (j < self.packed_data.int_count) : (j += 1) {
+                if (self.packed_data.get(j) == 0) {
+                    found_size = 0;
+                    if (j > (i + 1) * 128) {
+                        break;
+                    }
+                } else {
+                    if (found_size == 0) {
+                        found_idx = j;
+                    }
+                    found_size += 1;
+
+                    if (found_size >= contiguous) {
+                        return found_idx;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    pub fn mark(self: *Skip, start: usize, len: usize) void {
+        var i: usize = 0;
+        while (i < len) : (i += 1) {
+            self.packed_data.set(start + i, 1);
+        }
+    }
+};
+
 pub const Swar64 = struct {
     block_data: []u64,
 
@@ -156,6 +204,10 @@ fn testSmoke(comptime T: type) void {
 
 test "Naive" {
     testSmoke(Naive);
+}
+
+test "Skip" {
+    testSmoke(Skip);
 }
 
 test "Swar64" {

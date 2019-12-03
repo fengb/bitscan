@@ -122,6 +122,11 @@ test "Bitscan benchmark" {
             _ = n.scan(a.len);
         }
 
+        pub fn Skip(a: Arg) void {
+            var s = bitscan.Skip.init(empty[0..]);
+            _ = s.scan(a.len);
+        }
+
         pub fn Swar64(a: Arg) void {
             var s = bitscan.Swar64.init(empty[0..]);
             _ = s.scan(a.len);
