@@ -1,10 +1,114 @@
 const std = @import("std");
-const testing = std.testing;
 
-export fn add(a: i32, b: i32) i32 {
-    return a + b;
+const Naive = struct {
+    packed_data: std.PackedIntSlice(u1),
+
+    fn init(data: []u8) Naive {
+        return .{ .packed_data = std.PackedIntSlice(u1).init(data, data.len * 8) };
+    }
+
+    fn scan(self: Naive, contiguous: usize) ?usize {
+        var found_idx: usize = 0;
+        var found_size: usize = 0;
+
+        var i: usize = 0;
+        while (i < self.packed_data.int_count) : (i += 1) {
+            if (self.packed_data.get(i) == 0) {
+                found_size = 0;
+            } else {
+                if (found_size == 0) {
+                    found_idx = i;
+                }
+                found_size += 1;
+
+                if (found_size >= contiguous) {
+                    return found_idx;
+                }
+            }
+        }
+        return null;
+    }
+
+    fn mark(self: *Naive, start: usize, len: usize) void {
+        var i: usize = 0;
+        while (i < len) : (i += 1) {
+            self.packed_data.set(start + i, 1);
+        }
+    }
+};
+
+const Swar128 = struct {
+    block_data: []u128,
+
+    const block_bits = 128;
+
+    fn init(data: []align(16) u8) Swar128 {
+        return .{ .block_data = @bytesToSlice(u128, data) };
+    }
+
+    // Adapted from https://lifecs.likai.org/2010/06/finding-n-consecutive-bits-of-ones-in.html
+    fn matches(num: u128, count: usize) u128 {
+        const stop = std.math.floorPowerOfTwo(u128, count);
+        var result = num;
+
+        var i: usize = 1;
+        while (i < stop) : (i <<= 1) {
+            result &= result >> @intCast(u7, i);
+        }
+
+        if (stop < count) {
+            result &= (result >> @intCast(u7, count - stop));
+        }
+
+        return result;
+    }
+
+    fn scan(self: Swar128, contiguous: usize) ?usize {
+        // TODO: search memory spanning blocks
+        if (contiguous < block_bits) {
+            for (self.block_data) |data, i| {
+                const match = matches(data, contiguous);
+                if (match > 0) {
+                    // Little Endian because it's "native" to wasm.
+                    const lsb = @ctz(u128, match);
+                    return i * block_bits + lsb;
+                }
+            }
+        }
+        return null;
+    }
+
+    fn mark(self: *Swar128, start: usize, len: usize) void {
+        const i = start / block_bits;
+        const lsb = start % block_bits;
+        const mask = (@as(u128, 1) << @intCast(u7, len)) - 1;
+        self.block_data[i] |= mask << @intCast(u7, lsb);
+    }
+};
+
+fn testSmoke(comptime T: type) void {
+    var data align(16) = [_]u8{0} ** 0x100;
+
+    var t = T.init(data[0..]);
+    std.testing.expectEqual(t.scan(1), null);
+
+    data[0] = 1;
+    std.testing.expectEqual(t.scan(1), 0);
+    std.testing.expectEqual(t.scan(2), null);
+
+    data[0xff] = 0b11000000;
+    std.testing.expectEqual(t.scan(2), 2046);
+
+    t.mark(0xff * 8 + 4, 4);
+    std.testing.expectEqual(data[0xff], 0b11110000);
+    t.mark(0xff * 8, 4);
+    std.testing.expectEqual(data[0xff], 0b11111111);
 }
 
-test "basic add functionality" {
-    testing.expect(add(3, 7) == 10);
+test "Naive" {
+    testSmoke(Naive);
+}
+
+test "Swar128" {
+    testSmoke(Swar128);
 }
