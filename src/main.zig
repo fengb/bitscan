@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Naive = struct {
+pub const Naive = struct {
     packed_data: std.PackedIntSlice(u1),
 
-    fn init(data: []u8) Naive {
+    pub fn init(data: []u8) Naive {
         return .{ .packed_data = std.PackedIntSlice(u1).init(data, data.len * 8) };
     }
 
-    fn scan(self: Naive, contiguous: usize) ?usize {
+    pub fn scan(self: Naive, contiguous: usize) ?usize {
         var found_idx: usize = 0;
         var found_size: usize = 0;
 
@@ -29,7 +29,7 @@ const Naive = struct {
         return null;
     }
 
-    fn mark(self: *Naive, start: usize, len: usize) void {
+    pub fn mark(self: *Naive, start: usize, len: usize) void {
         var i: usize = 0;
         while (i < len) : (i += 1) {
             self.packed_data.set(start + i, 1);
@@ -37,12 +37,12 @@ const Naive = struct {
     }
 };
 
-const Swar128 = struct {
+pub const Swar128 = struct {
     block_data: []u128,
 
     const block_bits = 128;
 
-    fn init(data: []align(16) u8) Swar128 {
+    pub fn init(data: []align(16) u8) Swar128 {
         return .{ .block_data = @bytesToSlice(u128, data) };
     }
 
@@ -63,7 +63,7 @@ const Swar128 = struct {
         return result;
     }
 
-    fn scan(self: Swar128, contiguous: usize) ?usize {
+    pub fn scan(self: Swar128, contiguous: usize) ?usize {
         // TODO: search memory spanning blocks
         if (contiguous < block_bits) {
             for (self.block_data) |data, i| {
@@ -78,7 +78,7 @@ const Swar128 = struct {
         return null;
     }
 
-    fn mark(self: *Swar128, start: usize, len: usize) void {
+    pub fn mark(self: *Swar128, start: usize, len: usize) void {
         const i = start / block_bits;
         const lsb = start % block_bits;
         const mask = (@as(u128, 1) << @intCast(u7, len)) - 1;
